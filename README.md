@@ -5,14 +5,16 @@
 ## 目录结构
 ```
 --checkpoint：模型和配置保存位置
+----sample
+--------xx.json
+--------xx.bin
 --model_hub：预训练模型
 ----chinese-bert-wwm-ext:
 --------vocab.txt
 --------pytorch_model.bin
 --------config.json
 --data：存放数据
-----dgre
---------ori_data：原始的数据
+----sample
 --------ner_data：处理之后的数据
 ------------labels.txt：标签
 ------------train.txt：训练数据
