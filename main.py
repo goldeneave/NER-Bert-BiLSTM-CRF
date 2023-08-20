@@ -1,4 +1,5 @@
 import os
+import csv
 import json
 import torch
 import numpy as np
@@ -11,7 +12,6 @@ from tqdm import tqdm
 from seqeval.metrics import classification_report
 from torch.utils.data import DataLoader
 from transformers import AdamW, get_linear_schedule_with_warmup, BertTokenizer
-
 
 class Trainer:
     def __init__(self,
@@ -40,8 +40,13 @@ class Trainer:
         self.total_step = len(self.train_loader) * self.epochs
 
     def train(self):
-        global_step = 1
+        train_losses = []  # 存储每个epoch的训练损失
+        dev_losses = []    # 存储每个epoch的验证损失
+
         for epoch in range(1, self.epochs + 1):
+            total_train_loss = 0.0
+            total_batches = len(self.train_loader)
+
             for step, batch_data in enumerate(self.train_loader):
                 self.model.train()
                 for key, value in batch_data.items():
@@ -55,13 +60,49 @@ class Trainer:
                 loss.backward()
                 self.optimizer.step()
                 self.schedule.step()
-                print(f"【train】{epoch}/{self.epochs} {global_step}/{self.total_step} loss:{loss.item()}")
-                global_step += 1
-                if global_step % self.save_step == 0:
-                    torch.save(self.model.state_dict(), os.path.join(self.output_dir, "pytorch_model_ner.bin"))
-                
 
-        torch.save(self.model.state_dict(), os.path.join(self.output_dir, "pytorch_model_ner.bin"))
+                total_train_loss += loss.item()
+
+                print(f"【train】Epoch {epoch}/{self.epochs} - Batch {step + 1}/{total_batches} - Loss: {loss.item():.6f}")
+
+            avg_train_loss = total_train_loss / total_batches
+            print(f"【train】Epoch {epoch}/{self.epochs} - Avg Loss: {avg_train_loss:.6f}")
+
+            train_losses.append(avg_train_loss)
+
+            self.model.eval()
+            total_dev_loss = 0.0
+            total_dev_batches = len(self.dev_loader)
+
+            with torch.no_grad():
+                for dev_step, dev_batch_data in enumerate(tqdm(self.dev_loader)):
+                    for key, value in dev_batch_data.items():
+                        dev_batch_data[key] = value.to(self.device)
+                    input_ids = dev_batch_data["input_ids"]
+                    attention_mask = dev_batch_data["attention_mask"]
+                    labels = dev_batch_data["labels"]
+                    output = self.model(input_ids, attention_mask, labels)
+                    dev_loss = output.loss
+                    total_dev_loss += dev_loss.item()
+
+            avg_dev_loss = total_dev_loss / total_dev_batches
+            print(f"【dev】Epoch {epoch}/{self.epochs} - Avg Loss: {avg_dev_loss:.6f}")
+
+            dev_losses.append(avg_dev_loss)
+
+            # 保存每个epoch结束时的模型权重
+            epoch_model_filename = f"pytorch_model_ner_epoch{epoch}.bin"
+            torch.save(self.model.state_dict(), os.path.join(self.output_dir, epoch_model_filename))
+            print(f"------------------------------------------------Model weights for epoch {epoch} saved successfully!------------------------------------------------")
+
+        # 将训练损失、验证损失和epoch编号写入CSV文件
+        csv_filename = os.path.join(self.output_dir, "loss_history.csv")
+        with open(csv_filename, 'w', newline='') as csvfile:
+            csv_writer = csv.writer(csvfile)
+            csv_writer.writerow(["num_of_epoch", "train_loss", "dev_loss"])  # 写入CSV文件的头行
+            for epoch_num, (train_loss, dev_loss) in enumerate(zip(train_losses, dev_losses), start=1):
+                csv_writer.writerow([epoch_num, train_loss, dev_loss])
+
 
     def test(self):
         self.model.load_state_dict(torch.load(os.path.join(self.output_dir, "pytorch_model_ner.bin")))
@@ -91,7 +132,6 @@ class Trainer:
 
         report = classification_report(trues, preds)
         return report
-
 
 def build_optimizer_and_scheduler(args, model, t_total):
     module = (
@@ -134,7 +174,6 @@ def build_optimizer_and_scheduler(args, model, t_total):
 
     return optimizer, scheduler
 
-
 def main(data_name):
     args = NerConfig(data_name)
 
@@ -158,13 +197,9 @@ def main(data_name):
     dev_loader = DataLoader(dev_dataset, shuffle=False, batch_size=args.dev_batch_size, num_workers=2)
 
     model = BertNer(args)
-
-    # for name,_ in model.named_parameters():
-    #   print(name)
-
     model.to(device)
-    t_toal = len(train_loader) * args.epochs
-    optimizer, schedule = build_optimizer_and_scheduler(args, model, t_toal)
+    t_total = len(train_loader) * args.epochs
+    optimizer, schedule = build_optimizer_and_scheduler(args, model, t_total)
 
     train = Trainer(
         output_dir=args.output_dir,
@@ -181,10 +216,7 @@ def main(data_name):
 
     train.train()
 
-    report = train.test()
-    print(report)
-
 
 if __name__ == "__main__":
-    data_name = "test"
+    data_name = "your_data"
     main(data_name)
