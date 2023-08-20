@@ -31,3 +31,13 @@
 再把原repo🐎一下：[点这里](https://github.com/taishan1994/BERT-BILSTM-CRF)
 
 如果有数据格式上的问题，记得再找一下自己的repo，应该也会传上来的
+
+## 2023.8.20更新
+#### 1. 修改原代码中train函数保存模型权重逻辑
+将原代码中保存最后一个epoch的权重文件改为，保存每一个epoch的权重文件，同时删除每隔固定step保存权重的操作
+
+#### 2. 修改权重文件验证逻辑
+原代码中对最后保存的weight进行验证，代码修正后会产生多个model weight，在main.py中删除训练结束的test步骤，并额外增加test.py对指定weight进行验证
+
+#### 3. 增加loss保存
+增加了对train和val的loss计算和保存，结果将保存至ckpt_path的csv文件中
